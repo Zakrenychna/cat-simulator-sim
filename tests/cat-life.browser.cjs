@@ -13,7 +13,7 @@ const assert=require('node:assert/strict');
   await page.waitForFunction(()=>window.__life.cat.position.y<1);
   const initial=await page.evaluate(()=>({toys:__life.toys.length,animals:__life.animals.length,platforms:__life.platforms.length,actions:__life.actions.length}));
   assert.equal(initial.toys,3);assert.equal(initial.animals,10);assert(initial.platforms>=12);assert(initial.actions>=30);
-  await page.locator('[data-life="journal"]').click();assert(await page.getByRole('heading',{name:'📖 Котячі пригоди'}).isVisible());
+  await page.locator('[data-life="journal"]').click();assert(await page.getByRole('heading',{name:'📖 Cat Adventures'}).isVisible());
   const frozen=await page.evaluate(()=>__life.data.clock);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>__life.data.clock),frozen);await page.locator('.close').click();
   // Owner supplies food, pets a friendly cat, then pursues/catches after mischief.
   await page.evaluate(()=>{__life.save.anger=0;__life.data.clock=600;__life.teleport(-3.8,.12,-8);});

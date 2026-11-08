@@ -39,10 +39,11 @@
   const world = new T.Group(); scene.add(world); const solid=[], breakables=[];
   let keys={}, yaw=.4, pitch=0, started=false, jump=0, msgTimer=0, energy=100, bob=0, viewMode='first', introTime=0, catFurMat=null, pawMat=null, collarMat=null, calicoPatches=[];
   let neighborHomes=[],currentHome=null,mansion=null,guard=null,squirrel=null,stickMesh=null,carryingStick=false,thrownStick=null,distractionTime=0,insideMansion=false;
-  let neighborhoodTargets=[],cityPeople=[],cityTraffic=[],aircraft=[],militaryUnits=[],laserBeams=[],motherShip=null,shipHull=100,attackClock=0,laserClock=0,cityDestroyed=0,onMothership=true,defenseAlerted=false;
+  let neighborhoodTargets=[],cityPeople=[],cityTraffic=[],aircraft=[],militaryUnits=[],alienAllies=[],alleyRobots=[],alleyCats=[],laserBeams=[],motherShip=null,shipHull=100,attackClock=0,laserClock=0,meleeClock=0,militarySpawnCount=0,cityDestroyed=0,onMothership=true,defenseAlerted=false,alleyEncounterActive=false,flashlight=null;
   let save={money:0,anger:0,destroyed:0,house:0,unlocked:1,owned:[],equipped:'Natural',volume:true,breed:'Orange tabby',catName:'Miso',collar:0xff6b8b,loot:[],cityDestroyed:[]}; try { save={...save,...JSON.parse(localStorage.getItem('naughtyCatSave')||'{}')}; } catch(e) {} if(!Array.isArray(save.loot))save.loot=[];if(!Array.isArray(save.cityDestroyed))save.cityDestroyed=[];
   const houseNames=['Tiny Apartment','Suburban Sweet Home','Modern Luxury House','Grand Mansion','Billionaire Estate','Royal Cat Palace','???'];
   const houseFloors=[1,2,3,4,5,6,8],houseFootprints=[{width:28,depth:23},{width:32,depth:26},{width:36,depth:29},{width:40,depth:32},{width:44,depth:35},{width:50,depth:40},{width:62,depth:54}],storyHeight=3.2;
+  const alleyCenterX=16;
   if(save.unlocked>6)houseNames[6]='Secret Alien Habitat';
   const cat = new T.Group(), owner = new T.Group(); cat.position.set(0,.12,3.8); owner.position.set(-1.5,0,-.5); let ownerTarget = new T.Vector3();
   const toast = s=>{let e=document.querySelector('#toast');e.textContent=s;e.classList.add('show');clearTimeout(msgTimer);msgTimer=setTimeout(()=>e.classList.remove('show'),1900)};
@@ -70,6 +71,16 @@
     for(let z of [-8,8])for(let x of [-11,-6,0,6,11])box(1.4,.15,.25,glow,new T.Vector3(x,.48,z),motherShip);
     box(2,.05,12,glow,new T.Vector3(0,.48,5),motherShip);
     const lift=new T.Mesh(new T.CylinderGeometry(2.2,2.2,21,24,1,true),new T.MeshBasicMaterial({color:0x57f7e1,transparent:true,opacity:.18,side:T.DoubleSide}));lift.position.set(0,-11,0);motherShip.add(lift);
+    alienAllies=[];
+    for(const [index,x] of [-7,7].entries()){
+      const ally=new T.Group(),skin=mat(index?0x75e99a:0x9af07c,.42),suit=mat(index?0x6a70cf:0x398d9d,.4,.24),eye=mat(0x12182b,.12,.1);
+      mesh(new T.SphereGeometry(.31,16,12),suit,new T.Vector3(0,.55,0),ally);
+      mesh(new T.SphereGeometry(.36,18,14),skin,new T.Vector3(0,1.18,0),ally).scale.set(.82,1.1,.78);
+      for(const side of [-1,1]){mesh(new T.SphereGeometry(.105,12,8),eye,new T.Vector3(side*.17,1.24,.27),ally);cyl(.075,.48,skin,new T.Vector3(side*.31,.58,0),ally);}
+      for(const side of [-1,1])cyl(.09,.4,suit,new T.Vector3(side*.13,.17,0),ally);
+      ally.position.set(x,22.5,43+(index?3:-3));world.add(ally);motion.add(ally,'person');
+      alienAllies.push({group:ally,cooldown:.6+index*.8});
+    }
   }
   function addCityBuilding(id,x,z,width,depth,height,color){
     if((save.cityDestroyed||[]).includes(id))return;
@@ -109,8 +120,155 @@
     const helicopter=new T.Group();world.add(helicopter);const heliBody=mat(0x627058,.55,.25),rotor=mat(0x303743,.4,.25);
     mesh(new T.SphereGeometry(1,14,10),heliBody,new T.Vector3(0,0,0),helicopter).scale.set(1.5,.75,.8);box(3,.09,.13,rotor,new T.Vector3(0,1,0),helicopter);box(7,.06,.12,rotor,new T.Vector3(0,1.05,0),helicopter);box(2.6,.08,.08,heliBody,new T.Vector3(0,.05,2),helicopter);helicopter.position.set(45,13,64);motion.add(helicopter,'aircraft');aircraft.push({group:helicopter,speed:-6,axis:'x',range:100,rotor:helicopter.children[2]});
   }
+  function buildAlley(){
+    alleyRobots=[];alleyCats=[];alleyEncounterActive=false;
+    const asphalt=mat(0x11131b,.92),brick=mat(0x171a22,.95),trim=mat(0x303541,.82),window=new T.MeshStandardMaterial({color:0x172233,emissive:0x101f38,emissiveIntensity:.3,roughness:.7}),litWindow=new T.MeshStandardMaterial({color:0x7f7d68,emissive:0xe4b865,emissiveIntensity:.65,roughness:.55}),sign=mat(0x292a34,.8);
+    const neon=new T.MeshStandardMaterial({color:0x76efff,emissive:0x39c8ed,emissiveIntensity:2.6,roughness:.3});
+    box(16,.12,62,asphalt,new T.Vector3(alleyCenterX,-.12,-43));
+    for(let i=0;i<9;i++){
+      const z=-70+i*6.6;
+      box(3.2,.035,1.4,mat(i%2?0x10111b:0x15141c,.3,.2),new T.Vector3(alleyCenterX+(i%2?3:-3),-.045,z)).rotation.y=(i%2?-.18:.2);
+      box(.12,.025,.75,mat(0x526070,.55,.3),new T.Vector3(alleyCenterX+(i%2?3:-3),-.018,z+.13));
+    }
+    for(const side of [-1,1]){
+      const tower=new T.Group();world.add(tower);tower.position.set(alleyCenterX+side*11,0,-43);
+      box(12,30,60,brick,new T.Vector3(0,15,0),tower);
+      box(12.4,.5,60.4,trim,new T.Vector3(0,30.1,0),tower);
+      const face=-side*5.98;
+      for(let floor=0;floor<9;floor++)for(const z of [-27,-19,-11,-3,5,13]){
+        box(.05,1.45,1.35,(floor+Math.abs(z))%4===0?litWindow:window,new T.Vector3(face,2.1+floor*3.1,z),tower);
+        box(.08,.08,1.5,trim,new T.Vector3(face+side*.05,1.35+floor*3.1,z),tower);
+      }
+      box(.16,2.8,2.2,sign,new T.Vector3(face,1.3,9),tower);
+      box(.2,.25,3,mat(side<0?0x343b55:0x493a37,.7),new T.Vector3(face+side*.12,3,9),tower);
+      for(const z of [-25,-15,-5,5,15,25]){
+        box(12,.32,.5,trim,new T.Vector3(0,9,z),tower);
+        for(let rung=0;rung<7;rung++)box(.1,.08,.08,mat(0x394252,.55,.35),new T.Vector3(-side*4,9+rung*.85,z-.18),tower);
+      }
+      for(const pipeX of [-4.7,4.7])cyl(.13,58,mat(0x30313a,.6,.35),new T.Vector3(pipeX,14,-1),tower);
+      for(let floor=0;floor<9;floor++)for(const z of [-30,-6,18]){
+        box(.12,2,.12,trim,new T.Vector3(-side*5.6,2+floor*3.1,z),tower);
+        box(.12,.12,3,trim,new T.Vector3(-side*5.6,1+floor*3.1,z-1.5),tower);
+      }
+      if(side===-1){
+        const signGlow=mesh(new T.BoxGeometry(.12,2.2,1.4),neon,new T.Vector3(face,6,0),tower);
+        signGlow.rotation.z=.04;
+      }
+    }
+    box(1.1,2.2,.16,mat(0x24202a,.55,.25),new T.Vector3(alleyCenterX-7.5,1.1,-54));
+    box(.85,1.4,.08,mat(0x42404a,.62),new T.Vector3(alleyCenterX-7.5,2.9,-54));
+    for(const side of [-1,1])for(const x of [alleyCenterX+side*5.3,alleyCenterX+side*6.1]){
+      box(.55,.14,1.5,mat(0x222833,.7,.25),new T.Vector3(x,.3,-31));
+      for(let wheel=0;wheel<2;wheel++)cyl(.12,.62,mat(0x11151c,.85),new T.Vector3(x+(side<0?-.3:.3),.15,-31+(wheel?-.45:.45))).rotation.z=Math.PI/2;
+    }
+    for(const z of [-61,-40,-19]){
+      const wire=box(.035,.035,10,mat(0x171922,.7,.3),new T.Vector3(alleyCenterX,17,z));
+      wire.rotation.y=.12;
+      for(const side of [-1,1])box(.04,.04,3,mat(0x171922,.7,.3),new T.Vector3(alleyCenterX+side*5,16.3,z));
+    }
+    const lampMat=new T.MeshStandardMaterial({color:0xffc478,emissive:0xff8a36,emissiveIntensity:1.7});
+    for(const z of [-66,-43,-20]){
+      box(.14,4,.14,trim,new T.Vector3(alleyCenterX-4.6,2,z));
+      mesh(new T.SphereGeometry(.22,10,8),lampMat,new T.Vector3(alleyCenterX-4.6,4,z));
+      const pool=new T.PointLight(0xffa45f,18,18,2);pool.position.set(alleyCenterX-4.6,3.8,z);world.add(pool);
+      box(.16,.12,.16,mat(0x6a483d,.7),new T.Vector3(alleyCenterX-4.6,3.65,z));
+    }
+    for(let i=0;i<5;i++){
+      const z=-67+i*12,side=i%2?1:-1;
+      const tube=box(.12,2.4,.16,neon,new T.Vector3(alleyCenterX+side*5.8,8,z));
+      tube.rotation.z=side*.16;
+      const wash=new T.PointLight(i%2?0x4aaeff:0xff4e87,10,13,2);wash.position.set(alleyCenterX+side*5.2,8,z);world.add(wash);
+    }
+    for(let i=0;i<7;i++){
+      const x=alleyCenterX+(i%2?4:-4),z=-67+i*8.1;
+      const tag=box(.035,.8+Math.random()*.6,.05,mat([0x61365e,0x23626b,0x8a583a][i%3],.95),new T.Vector3(x,5+Math.random()*9,z));
+      tag.rotation.z=(Math.random()-.5)*.24;
+    }
+    for(const [index,z] of [-25,-46,-66].entries()){
+      const catGroup=new T.Group(),fur=mat([0xd28a52,0xb7b6c4,0x44333b][index],.92),eye=mat(0x91f5a5,.25,.1);
+      mesh(new T.SphereGeometry(.42,14,10),fur,new T.Vector3(0,.48,0),catGroup).scale.set(1.25,.78,.85);
+      mesh(new T.SphereGeometry(.3,14,10),fur,new T.Vector3(0,.85,-.22),catGroup);
+      for(const side of [-1,1]){
+        const ear=mesh(new T.ConeGeometry(.12,.3,5),fur,new T.Vector3(side*.19,1.11,-.22),catGroup);ear.rotation.z=side*-.22;
+        mesh(new T.SphereGeometry(.045,8,6),eye,new T.Vector3(side*.11,.88,-.49),catGroup);
+      }
+      for(const side of [-1,1])for(const forward of [-1,1])cyl(.075,.38,fur,new T.Vector3(side*.23,.2,forward*.2),catGroup);
+      catGroup.position.set(alleyCenterX+(index===1?1.8:-1.8),.02,z);world.add(catGroup);motion.add(catGroup,'person');
+      alleyCats.push({group:catGroup,hp:4,alive:true,attack:1+index*.5});
+    }
+    for(const [index,z] of [-34,-54,-70].entries()){
+      const robot=new T.Group(),armor=mat(0x292f3b,.38,.72),joint=mat(0x111722,.5,.5),red=new T.MeshStandardMaterial({color:0xff334d,emissive:0xff1533,emissiveIntensity:2});
+      box(.9,1.1,.55,armor,new T.Vector3(0,1.35,0),robot);
+      mesh(new T.SphereGeometry(.42,12,10),armor,new T.Vector3(0,2.2,0),robot);
+      for(const side of [-1,1]){
+        mesh(new T.SphereGeometry(.095,10,8),red,new T.Vector3(side*.16,2.25,-.36),robot);
+        cyl(.12,.8,joint,new T.Vector3(side*.62,1.3,0),robot);
+        cyl(.13,.75,armor,new T.Vector3(side*.22,.48,0),robot);
+      }
+      cyl(.06,.55,red,new T.Vector3(0,2.65,0),robot);
+      robot.position.set(alleyCenterX+(index===1?2:-2),0,z);world.add(robot);
+      const gun= new T.Group(),gunMat=mat(0x171d29,.3,.8),gunGlow=new T.MeshStandardMaterial({color:0xff4058,emissive:0xff1738,emissiveIntensity:1.5});
+      box(.2,.22,.52,gunMat,new T.Vector3(0,0,0),gun);
+      box(.12,.12,.7,gunMat,new T.Vector3(0,.01,-.52),gun);
+      box(.09,.19,.2,gunMat,new T.Vector3(0,-.18,.06),gun);
+      const muzzle=mesh(new T.SphereGeometry(.075,8,6),gunGlow,new T.Vector3(0,.01,-.9),gun);muzzle.visible=false;
+      gun.position.set(.66,1.45,-.08);robot.add(gun);
+      const healthCanvas=document.createElement('canvas');healthCanvas.width=220;healthCanvas.height=48;
+      const healthTexture=new T.CanvasTexture(healthCanvas);healthTexture.colorSpace=T.SRGBColorSpace;
+      const healthSprite=new T.Sprite(new T.SpriteMaterial({map:healthTexture,transparent:true,depthTest:true,depthWrite:false}));
+      healthSprite.position.set(0,3.35,0);healthSprite.scale.set(2.4,.52,1);healthSprite.renderOrder=10;robot.add(healthSprite);
+      const damageMarks=[];
+      for(let mark=0;mark<3;mark++){
+        const crack=box(.035,.38,.025,mat(0x080c13,.95),new T.Vector3((mark-1)*.12,1.36,-.3),robot);
+        crack.rotation.z=(mark-1)*.2+.22;crack.visible=false;damageMarks.push(crack);
+      }
+      const core=mesh(new T.SphereGeometry(.16,10,8),gunGlow,new T.Vector3(0,1.36,-.34),robot);core.visible=false;
+      const robotData={group:robot,hp:8,maxHp:8,attack:1.2+index*.6,alive:true,healthCanvas,healthTexture,healthSprite,damageMarks,core,armor,gunMuzzle:muzzle,gunFlash:0};
+      drawRobotHealth(robotData);alleyRobots.push(robotData);
+    }
+  }
+  function drawRobotHealth(robot){
+    const ctx=robot.healthCanvas.getContext('2d'),ratio=Math.max(0,robot.hp/robot.maxHp),width=190;
+    ctx.clearRect(0,0,220,48);ctx.fillStyle='rgba(8,12,20,.88)';ctx.beginPath();ctx.roundRect(2,2,216,44,9);ctx.fill();
+    ctx.fillStyle='#dce8f4';ctx.font='bold 14px system-ui';ctx.textAlign='left';ctx.fillText('HUNTER UNIT',12,18);
+    ctx.textAlign='right';ctx.fillText(`${Math.max(0,robot.hp)}/${robot.maxHp}`,208,18);
+    ctx.fillStyle='#343b48';ctx.beginPath();ctx.roundRect(12,25,width,11,5);ctx.fill();
+    ctx.fillStyle=ratio>.6?'#58e38b':ratio>.3?'#ffc34f':'#ff5368';
+    if(ratio>0){ctx.beginPath();ctx.roundRect(12,25,width*ratio,11,5);ctx.fill();}
+    ctx.strokeStyle='#c2d0df';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(2,2,216,44,9);ctx.stroke();
+    robot.healthTexture.needsUpdate=true;robot.healthSprite.visible=robot.alive;
+  }
+  function damageRobot(robot,damage=1){
+    if(!robot?.alive)return;
+    robot.hp=Math.max(0,robot.hp-damage);
+    const damageLevel=robot.maxHp-robot.hp;
+    robot.damageMarks.forEach((mark,index)=>mark.visible=index<damageLevel);
+    robot.core.visible=damageLevel>0;
+    robot.armor.emissive.setHex(0x922034);robot.armor.emissiveIntensity=.9;
+    setTimeout(()=>{if(robot.alive){robot.armor.emissive.setHex(0x000000);robot.armor.emissiveIntensity=0;}},150);
+    motion.burst(robot.group,0xff895d);drawRobotHealth(robot);
+    if(robot.hp<=0){
+      robot.alive=false;robot.healthSprite.visible=false;motion.burst(robot.group,0x79ff9c);robot.group.parent?.remove(robot.group);
+      toast('🤖 Robot defeated! The alley cats are safe.');
+    }else toast(`Robot damaged · ${robot.hp}/${robot.maxHp} health`);
+  }
+  function attackNearbyRobot(){
+    if(!alleyEncounterActive||meleeClock>0)return false;
+    let target=null,distance=2.8;
+    for(const robot of alleyRobots){
+      if(!robot.alive)continue;
+      const current=cat.position.distanceTo(robot.group.position);
+      if(current<distance){target=robot;distance=current;}
+    }
+    if(!target)return false;
+    meleeClock=.45;
+    const start=cat.position.clone().add(new T.Vector3(0,.65,0)),end=target.group.position.clone().add(new T.Vector3(0,1.4,0));
+    addLaserBeam(start,end,0xffd36b);
+    damageRobot(target);
+    return true;
+  }
   function buildNeighborhood(grass){
-    neighborHomes=[];mansion=null;guard=null;squirrel=null;stickMesh=null;neighborhoodTargets=[];cityPeople=[];cityTraffic=[];aircraft=[];militaryUnits=[];laserBeams=[];cityDestroyed=0;
+    neighborHomes=[];mansion=null;guard=null;squirrel=null;stickMesh=null;neighborhoodTargets=[];cityPeople=[];cityTraffic=[];aircraft=[];militaryUnits=[];laserBeams=[];militarySpawnCount=0;cityDestroyed=0;
     const asphalt=mat(0x454b53,.95), sidewalk=mat(0xc9c8c1,.9), stripe=mat(0xf5efe0,.65), woodTrim=mat(0xf4ead8,.8);
     box(110,.08,100,grass,new T.Vector3(0,-.12,55));
     box(104,.1,6,asphalt,new T.Vector3(0,-.01,43));
@@ -156,7 +314,7 @@
     guard=new T.Group();world.add(guard);guard.position.set(0,hillHeight(0,78),78);const uniform=mat(0x283d58,.75),skin=mat(0xc98e6b,.8);mesh(new T.CylinderGeometry(.42,.55,1.8,12),uniform,new T.Vector3(0,1.15,0),guard);mesh(new T.SphereGeometry(.36,12,10),skin,new T.Vector3(0,2.35,0),guard);mesh(new T.SphereGeometry(.38,12,8),mat(0x20212a,.8),new T.Vector3(0,2.58,0),guard);for(let x of [-.2,.2])cyl(.12,1.1,uniform,new T.Vector3(x,.35,0),guard);
     squirrel=new T.Group();world.add(squirrel);squirrel.position.set(-9,hillHeight(-9,73),73);const squirrelMat=mat(0x9b6237,.9);mesh(new T.SphereGeometry(.36,12,9),squirrelMat,new T.Vector3(0,.48,0),squirrel).scale.set(1.3,.8,.8);mesh(new T.SphereGeometry(.24,12,9),squirrelMat,new T.Vector3(.3,.73,0),squirrel);mesh(new T.SphereGeometry(.29,10,8),squirrelMat,new T.Vector3(-.38,.75,0),squirrel).scale.set(.65,1.5,.55);for(let side of [-1,1])mesh(new T.ConeGeometry(.09,.2,5),squirrelMat,new T.Vector3(.22,.97,side*.14),squirrel);
     stickMesh=box(.07,.07,.75,mat(0x80522e,.9),new T.Vector3(7,hillHeight(7,67)+.12,67));
-    buildCity();buildMothership();
+    buildCity();buildMothership();buildAlley();
   }
   function buildHouse(){const palettes=[{wall:0xe8d8ca,floor:0x9f7552,accent:0xd97858,trim:0xf2e9dc},{wall:0xd7e5d5,floor:0xb28b61,accent:0x688b69,trim:0xf7f4e9},{wall:0xe1e8ed,floor:0xaaaeb5,accent:0x4b8797,trim:0xffffff},{wall:0xe6d6d2,floor:0x76504b,accent:0xb77c51,trim:0xf3dfb1},{wall:0xd4d9df,floor:0x625d63,accent:0x328e91,trim:0xd7c8a1},{wall:0xd9d0ed,floor:0x75618e,accent:0xe5bd64,trim:0xfff4d3},{wall:0x25304d,floor:0x1d2540,accent:0x55ffb4,trim:0x9fe8ff}],houseIndex=T.MathUtils.clamp(save.house,0,6),style=palettes[houseIndex],{width,depth}=houseFootprints[houseIndex],floors=houseFloors[houseIndex],height=storyHeight*floors,frontZ=8.5,backZ=frontZ-depth,midZ=(frontZ+backZ)/2;let wall=textured(plaster,style.wall), floor=textured(oak,style.floor), tile=mat(houseIndex===2?0xf4f5f2:style.trim,.45), trim=mat(style.trim,.4),accent=mat(style.accent,.45,.12);box(width,.1,depth,floor,new T.Vector3(0,-.05,midZ));box(8,.105,7,tile,new T.Vector3(width/2-5,.005,-3));
     addWall(0,height/2,backZ,width,height,.18,wall);addWall(-width/2,height/2,midZ,.18,height,depth,wall);addWall(width/2,height/2,midZ,.18,height,depth,wall);const frontSegment=(width-3.8)/2;for(const side of [-1,1])addWall(side*(frontSegment+3.8)/2,height/2,frontZ,frontSegment,height,.18,wall);addWall(3,1.5,-2,.16,3,13,wall);addWall(-4.5,1.5,2.3,8,.16,3,wall);for(let x=-width/2+1;x<width/2;x+=3)box(2.8,.13,.12,trim,new T.Vector3(x,.12,backZ+.18));
@@ -201,6 +359,7 @@
   function makeOwner(){motion.entries=motion.entries.filter(e=>e.object!==owner);owner.clear();if(onMothership){const skin=mat(0x74e69b,.4),eye=mat(0x11182a,.12,.15),suit=mat(0x6678db,.35,.3);mesh(new T.SphereGeometry(.34,16,12),suit,new T.Vector3(0,1.05,0),owner);mesh(new T.SphereGeometry(.38,20,16),skin,new T.Vector3(0,1.8,0),owner).scale.set(.8,1.35,.8);for(let side of [-1,1])mesh(new T.SphereGeometry(.13,12,8),eye,new T.Vector3(side*.2,1.9,.27),owner);mesh(new T.ConeGeometry(.08,.38,8),skin,new T.Vector3(0,2.4,0),owner);}else{let cloth=mat(0x5c7796,.7), skin=mat(0xe1ae8e,.8), hair=mat(0x3c2924,.9);mesh(new T.CylinderGeometry(.27,.22,.82,16),cloth,new T.Vector3(0,1.15,0),owner);mesh(new T.SphereGeometry(.22,16,12),skin,new T.Vector3(0,1.75,0),owner);mesh(new T.SphereGeometry(.225,16,8),hair,new T.Vector3(0,1.88,.02),owner).scale.set(1,.45,1);for(let x of [-.1,.1])cyl(.055,.75,mat(0x31445a),new T.Vector3(x,.38,0),owner);}owner.userData.arms=[];for(const side of [-1,1]){const arm=new T.Group();arm.position.set(side*.3,1.35,0);cyl(.07,.6,mat(onMothership?0x74e69b:0xe1ae8e),new T.Vector3(0,-.3,0),arm);owner.add(arm);owner.userData.arms.push(arm);}owner.scale.setScalar(1.65);scene.add(owner);motion.add(owner,'person')}
   function rebuildHouse(){world.clear();solid.length=0;breakables.length=0;currentHome=null;insideMansion=false;carryingStick=false;thrownStick=null;distractionTime=0;onMothership=true;buildHouse();if(life)life.rebuild();makeOwner();cat.position.set(0,22.52,43);owner.position.set(-2,22.4,44);yaw=Math.PI;pitch=-.55;}
   buildHouse();makeCat();makeOwner();cat.position.set(0,22.52,43);owner.position.set(-2,22.4,44);onMothership=true;cat.visible=false;scene.add(camera);
+  flashlight=new T.SpotLight(0xfff1cf,130,38,.44,.55,1.3);flashlight.visible=false;camera.add(flashlight);flashlight.target.position.set(0,0,-12);camera.add(flashlight.target);
   const paws=new T.Group();pawMat=mat(0xc87636,.9);camera.add(paws);
   for(const side of [-1,1]){mesh(new T.SphereGeometry(.105,12,8),pawMat,new T.Vector3(side*.19,-.39,-.52),paws).scale.set(1.35,.72,1);for(let toe=-1;toe<=1;toe++)mesh(new T.SphereGeometry(.035,8,6),pawMat,new T.Vector3(side*.19+toe*.065,-.34,-.55),paws);}
   applyCatStyle(save.breed||'Orange tabby');
@@ -210,7 +369,7 @@
   });
 
   function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}addEventListener('resize',resize);resize();
-  function hud(){document.querySelector('#money').textContent=save.money;document.querySelector('#angerText').textContent=Math.floor(save.anger)+'%';document.querySelector('#anger').style.width=save.anger+'%';document.querySelector('#houseName').textContent=`${houseNames[save.house]} · ${houseFloors[save.house]} floors`;document.querySelector('#outfitText').textContent=save.equipped;let m=save.anger<20?'🙂 Calm':save.anger<45?'😟 Concerned':save.anger<70?'😒 Annoyed':save.anger<90?'😠 Angry':'🤬 Furious';let el=document.querySelector('#moodText');if(el)el.textContent=m;document.querySelector('#missionProgress').textContent=`${save.destroyed}/3 · bonus $25`;const en=document.querySelector('#energy');const et=document.querySelector('#energyText');if(en)en.style.width=energy+'%';if(et)et.textContent=Math.floor(energy)+'%';const loot=document.querySelector('#lootCount');if(loot)loot.textContent=`🎒 Loot: ${save.loot.length} · ${carryingStick?'🪵 Stick ready':distractionTime>0?`Guard distracted ${Math.ceil(distractionTime)}s`:'E at the lift: mothership / city'}`;const throwButton=document.querySelector('#meowButton');if(throwButton)throwButton.innerHTML=carryingStick?'🪵<br>THROW':'🐱<br>MEOW';const hullBar=document.querySelector('#shipHull'),hullText=document.querySelector('#shipHullText');if(hullBar)hullBar.style.width=shipHull+'%';if(hullText)hullText.textContent=`${Math.round(shipHull)}% · ${militaryUnits.length} attackers`;}
+  function hud(){document.querySelector('#money').textContent=save.money;document.querySelector('#angerText').textContent=Math.floor(save.anger)+'%';document.querySelector('#anger').style.width=save.anger+'%';document.querySelector('#houseName').textContent=`${houseNames[save.house]} · ${houseFloors[save.house]} floors`;document.querySelector('#outfitText').textContent=save.equipped;let m=save.anger<20?'🙂 Calm':save.anger<45?'😟 Concerned':save.anger<70?'😒 Annoyed':save.anger<90?'😠 Angry':'🤬 Furious';let el=document.querySelector('#moodText');if(el)el.textContent=m;document.querySelector('#missionProgress').textContent=`${save.destroyed}/3 · bonus $25`;const en=document.querySelector('#energy');const et=document.querySelector('#energyText');if(en)en.style.width=energy+'%';if(et)et.textContent=Math.floor(energy)+'%';const loot=document.querySelector('#lootCount');if(loot)loot.textContent=`🎒 Loot: ${save.loot.length} · ${carryingStick?'🪵 Stick ready':distractionTime>0?`Guard distracted ${Math.ceil(distractionTime)}s`:'E at the lift: mothership / city'}`;const throwButton=document.querySelector('#meowButton');if(throwButton)throwButton.innerHTML=carryingStick?'🪵<br>THROW':'🐱<br>MEOW';const hullBar=document.querySelector('#shipHull'),hullText=document.querySelector('#shipHullText');if(hullBar)hullBar.style.width=shipHull+'%';if(hullText)hullText.textContent=`${Math.round(shipHull)}% · ${militaryUnits.length} attackers`;const alleyHud=document.querySelector('#alleyStatus');if(alleyHud){const activeRobots=alleyRobots.filter(robot=>robot.alive);alleyHud.hidden=!alleyEncounterActive;alleyHud.innerHTML=`<strong>🚨 ALLEY ROBOTS · ${activeRobots.length} ACTIVE</strong>${activeRobots.map((robot,index)=>`<div class="robot-health"><span>Hunter ${index+1}</span><div><i style="width:${Math.round(robot.hp/robot.maxHp*100)}%;background:${robot.hp/robot.maxHp>.6?'#58e38b':robot.hp/robot.maxHp>.3?'#ffc34f':'#ff5368'}"></i></div><b>${robot.hp}/${robot.maxHp}</b></div>`).join('')}`;}}
   function applyCatStyle(breed){save.breed=breed;const furColors={'Orange tabby':0xc87636,'Black cat':0x292631,'White cat':0xf1e9dc,'Gray cat':0x858996,'Calico':0xd98a52};const tint=furColors[breed]??0xc87636;catFurMat.color.setHex(tint);catModel.stripes.forEach(p=>p.visible=breed==='Orange tabby'||breed==='Gray cat');catModel.stripeMaterial.color.setHex(breed==='Gray cat'?0x505461:0x8e4929);pawMat.color.setHex(tint);calicoPatches.forEach(p=>p.visible=breed==='Calico');persist();}
   function setCatStyle(breed){applyCatStyle(breed);openPanel('customize');}
   function setCollar(color){save.collar=color;collarMat.color.setHex(color);persist();openPanel('customize');}
@@ -219,33 +378,46 @@
   function openPanel(which){const modal=document.querySelector('#modal'),panel=document.querySelector('#panel');if(which==='progress'){panel.innerHTML=`<div class="panelhead"><div><h2>🏠 Choose your home</h2><p>Visit any home you have unlocked.</p></div><button class="close" onclick="closePanel()">✕</button></div><div class="grid">${houseNames.map((name,index)=>`<div class="card"><div class="emoji">${index===5?'👑':'🏡'}</div><h3>${name}</h3><p>${index<save.unlocked?'Unlocked':"🔒 Unlock the next family by filling the owner's anger bar."}</p>${index===save.house?'<button disabled>YOUR HOME</button>':index<save.unlocked?`<button onclick="travelHouse(${index})">VISIT</button>`:''}</div>`).join('')}</div>`;}else if(which==='customize'||which==='cat'){const colors=[['Orange tabby',0xc87636],['Black cat',0x292631],['White cat',0xf1e9dc],['Gray cat',0x858996],['Calico',0xd98a52]];panel.innerHTML=`<div class="panelhead"><div><h2>🐱 Customize your cat</h2><p>Meet <b>${escapeHTML(save.catName||'Miso')}</b> the ${escapeHTML(save.breed||'Orange tabby')}.</p></div><button class="close" onclick="closePanel()">✕</button></div><h3>Choose a coat</h3><div class="row">${colors.map(([name,color])=>`<button style="background:#${color.toString(16).padStart(6,'0')}" onclick="setCatStyle('${name}')">${name}</button>`).join('')}</div><h3 style="margin-top:20px">Choose a collar</h3><div class="row"><button onclick="setCollar(0xff6b8b)">💗 Pink</button><button onclick="setCollar(0x4f83d1)">💙 Blue</button><button onclick="setCollar(0x8f63d2)">💜 Purple</button><button onclick="setCollar(0x53a872)">💚 Green</button></div><div class="row" style="margin-top:18px"><button class="secondary" onclick="renameCat()">✏️ Change name</button><button class="pink" onclick="closePanel()">READY TO PLAY</button></div>`;}else{panel.innerHTML=`<div class="panelhead"><h2>⚙️ Settings</h2><button class="close" onclick="closePanel()">✕</button></div><p>Press V to switch between first person and third person. WASD moves, Shift sprints, Space jumps.</p><button onclick="openPanel('customize')">🐱 Customize cat</button>`;}modal.classList.add('open')}
   function closePanel(){document.querySelector('#modal').classList.remove('open')}
   function toggleView(){viewMode=viewMode==='first'?'third':'first';cat.visible=viewMode==='third';paws.visible=viewMode==='first';const button=document.querySelector('#viewToggle');if(button)button.textContent=viewMode==='first'?'🎥 THIRD PERSON (V)':'🎥 FIRST PERSON (V)';}
+  function toggleFlashlight(){if(!started||document.querySelector('#modal').classList.contains('open'))return;flashlight.visible=!flashlight.visible;const button=document.querySelector('#flashlightButton');if(button)button.textContent=flashlight.visible?'🔦 LIGHT ON (F)':'🔦 LIGHT (F)';toast(flashlight.visible?'Flashlight on':'Flashlight off');}
   function addLaserBeam(start,end,color=0x5dfff0){
     const geometry=new T.BufferGeometry().setFromPoints([start,end]),material=new T.LineBasicMaterial({color,transparent:true,opacity:.95});
     const beam=new T.Line(geometry,material);scene.add(beam);laserBeams.push({beam,life:.2});
   }
   function hitTargetGroup(hit,targets){let object=hit?.object;while(object){const target=targets.find(candidate=>candidate.group===object);if(target)return target;object=object.parent}return null}
   function spawnMilitary(){
-    const group=new T.Group(),paint=mat(0x5c303b,.4,.45),glass=mat(0x9bbbd0,.22,.25);
-    box(6,.45,1.3,paint,new T.Vector3(0,0,0),group);box(.6,.25,9,paint,new T.Vector3(0,0,0),group);box(2,.25,2.4,paint,new T.Vector3(0,.15,-2.5),group);
-    box(1,.12,3,paint,new T.Vector3(0,.45,2),group);box(.35,.38,.35,glass,new T.Vector3(0,.3,-1),group);
-    group.position.set(Math.random()<.5?-46:46,31+Math.random()*8,36+Math.random()*14);world.add(group);
-    militaryUnits.push({group,hp:3,speed:5.5+Math.random()*2,attack:0});
+    const group=new T.Group(),paint=mat(0x5c303b,.4,.45),glass=mat(0x9bbbd0,.22,.25),kind=militarySpawnCount++%2?'tank':'helicopter';
+    if(kind==='helicopter'){
+      mesh(new T.SphereGeometry(.8,14,10),paint,new T.Vector3(0,0,0),group).scale.set(1.5,.72,.8);
+      box(2.2,.35,.55,glass,new T.Vector3(0,.04,-.48),group);box(3.2,.09,.13,paint,new T.Vector3(0,.78,0),group);
+      const rotor=box(7,.06,.12,paint,new T.Vector3(0,.83,0),group);box(1.7,.08,.08,paint,new T.Vector3(0,-.04,1.25),group);
+      group.position.set(Math.random()<.5?-46:46,31+Math.random()*5,36+Math.random()*14);
+      militaryUnits.push({group,hp:3,speed:6,attack:0,kind,rotor});
+    }else{
+      box(3.4,.75,2.4,paint,new T.Vector3(0,.76,0),group);box(1.8,.45,1.5,paint,new T.Vector3(0,1.3,-.05),group);
+      box(.3,.18,2.6,paint,new T.Vector3(0,1.36,-1.9),group);
+      for(const side of [-1,1])for(let wheel=-1;wheel<=1;wheel++)cyl(.38,.22,mat(0x252b30,.9),new T.Vector3(wheel*.85,.35,side*1.12),group).rotation.z=Math.PI/2;
+      group.position.set(Math.random()<.5?-46:46,.05,36+Math.random()*14);
+      militaryUnits.push({group,hp:4,speed:3.8,attack:0,kind});
+    }
+    world.add(group);
   }
   function fireLaser(){
     if(!started||laserClock>0)return;
     if(currentHome||insideMansion){bubble('Use the laser from the mothership or city.');return}
-    laserClock=.28;
+    laserClock=.12;
     const ray=new T.Raycaster();
     if(viewMode==='first')ray.setFromCamera(new T.Vector2(0,0),camera);
     else ray.set(new T.Vector3(cat.position.x,cat.position.y+.67,cat.position.z),new T.Vector3(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)).normalize());
     const enemyHit=ray.intersectObjects(militaryUnits.map(unit=>unit.group),true)[0];
     const targetHit=ray.intersectObjects(neighborhoodTargets.map(target=>target.group),true)[0];
-    const enemy=hitTargetGroup(enemyHit,militaryUnits),target=hitTargetGroup(targetHit,neighborhoodTargets);
-    const hit=enemyHit&&(!targetHit||enemyHit.distance<targetHit.distance)?enemyHit:targetHit;
+    const robotHit=ray.intersectObjects(alleyRobots.filter(robot=>robot.alive).map(robot=>robot.group),true)[0];
+    const enemy=hitTargetGroup(enemyHit,militaryUnits),target=hitTargetGroup(targetHit,neighborhoodTargets),robot=hitTargetGroup(robotHit,alleyRobots);
+    const hit=[enemyHit,targetHit,robotHit].filter(Boolean).sort((a,b)=>a.distance-b.distance)[0];
     const start=camera.getWorldPosition(new T.Vector3()),end=hit?hit.point.clone():start.clone().add(ray.ray.direction.clone().multiplyScalar(90));
-    addLaserBeam(start,end,enemy?0x92ffff:0x5dfff0);
+    addLaserBeam(start,end,robot?0x79ff9c:enemy?0x92ffff:0x5dfff0);
+    if(robot){damageRobot(robot);return}
     if(enemy){enemy.hp--;if(enemy.hp<=0){motion.burst(enemy.group,0x65ffe2);enemy.group.parent?.remove(enemy.group);militaryUnits.splice(militaryUnits.indexOf(enemy),1);toast('🛸 Defense laser disabled an attacker!')}else toast(`Enemy ship hit · ${enemy.hp} hits remaining`);return}
-    if(target){target.damage++;if(!defenseAlerted){defenseAlerted=true;attackClock=2.5;toast('🚨 The military noticed your laser! Defend the mothership!')}if(target.damage>=target.hits){motion.burst(target.group);target.group.parent?.remove(target.group);if(target.home){target.home.destroyed=true;target.home.interior.visible=false;}save.cityDestroyed=save.cityDestroyed||[];if(!save.cityDestroyed.includes(target.id))save.cityDestroyed.push(target.id);cityDestroyed=save.cityDestroyed.length;toast(`💥 Neighborhood target destroyed (${cityDestroyed})`);persist();}else toast(`Neighborhood target damaged · ${target.hits-target.damage} hits left`);return}
+    if(target){target.damage++;if(!defenseAlerted){defenseAlerted=true;attackClock=2.5;toast('🚨 The military noticed your laser! Defend the mothership!')}if(target.damage>=target.hits){motion.burst(target.group,0xffa45f);motion.collapse(target.group);neighborhoodTargets.splice(neighborhoodTargets.indexOf(target),1);if(target.home){target.home.destroyed=true;target.home.interior.visible=false;}save.cityDestroyed=save.cityDestroyed||[];if(!save.cityDestroyed.includes(target.id))save.cityDestroyed.push(target.id);cityDestroyed=save.cityDestroyed.length;toast(`💥 Neighborhood target destroyed (${cityDestroyed})`);persist();}else toast(`Neighborhood target damaged · ${target.hits-target.damage} hits left`);return}
     toast('Laser fired. Aim at a building or incoming craft.');
   }
   function scratch(){let closest=null,dist=1.7;const ray=new T.Raycaster();ray.setFromCamera(new T.Vector2(0,0),camera);const targets=breakables.flatMap(o=>o.g.children.length?[o.g,...o.g.children]:[o.g]);const hit=ray.intersectObjects(targets,true)[0];if(hit&&hit.distance<3.2)closest=breakables.find(o=>o.g===hit.object||o.g.children.includes(hit.object));if(!closest){for(const o of breakables){const d=cat.position.distanceTo(o.g.position);if(d<dist){dist=d;closest=o}}}if(!closest){bubble('Look at something nearby and press E to scratch.');return}if(owner.position.distanceTo(closest.g.position)<1.05){bubble('😠 The owner is guarding that!');return}closest.damage++;save.anger=Math.min(100,save.anger+4);motion.hit(closest.g);if(closest.damage<closest.hits){toast(`🐾 ${closest.name} scratched · ${closest.hits-closest.damage} hits left`);return}save.destroyed++;motion.burst(closest.g);closest.g.parent?.remove(closest.g);breakables.splice(breakables.indexOf(closest),1);if(closest.home){save.loot.push({name:closest.name,value:closest.value});closest.home.lootRemaining--;if(closest.home.lootRemaining<=0)closest.home.looted=true;toast(`Stole ${closest.name}! Take it back to your owner.`)}else{save.money+=closest.value;toast(`+$${closest.value} — ${closest.name.toUpperCase()} BROKEN`)}if(save.destroyed===3){save.money+=25;toast('🎯 ROOM CHAOS BONUS +$25')}if(save.anger>=100)adopt();persist();hud()}
@@ -258,21 +430,64 @@
   function leaveNeighbor(){if(!currentHome)return;const home=currentHome;home.interior.visible=false;home.exterior.visible=true;cat.position.set(home.x,.12,49.8);currentHome=null;yaw=Math.PI;toast('Back outside. Bring the loot to your owner!')}
   function enterMansion(){if(!mansion||!distractionTime){bubble('The bodyguard is watching the entrance. Find a stick and distract him with the squirrel.');return}insideMansion=true;mansion.exterior.visible=false;mansion.interior.visible=true;cat.position.set(0,mansion.y+.17,84.6);yaw=0;pitch=0;toast('The guard ran to the squirrel! Sneak in and grab the rich family’s valuables!');}
   function leaveMansion(){insideMansion=false;mansion.interior.visible=false;mansion.exterior.visible=true;cat.position.set(0,hillHeight(0,78)+.12,78);yaw=Math.PI;toast('You made it out of the mansion. Head back to your owner!')}
-  function pickupStick(){if(!stickMesh||carryingStick)return;carryingStick=true;stickMesh.visible=false;const button=document.querySelector('#meowButton');if(button)button.innerHTML='🪵<br>THROW';toast('Stick picked up. Aim at the squirrel and press F or THROW!');hud()}
+  function pickupStick(){if(!stickMesh||carryingStick)return;carryingStick=true;stickMesh.visible=false;const button=document.querySelector('#meowButton');if(button)button.innerHTML='🪵<br>THROW';toast('Stick picked up. Aim at the squirrel and tap MEOW / THROW!');hud()}
   function throwStick(){if(!carryingStick||!squirrel)return false;const target=squirrel.position.clone().add(new T.Vector3(0,.65,0)),to=target.clone().sub(camera.position).normalize(),view=camera.getWorldDirection(new T.Vector3());if(cat.position.distanceTo(target)>30||view.dot(to)<.94){bubble('Aim the middle of your view at the squirrel first.');return true}const start=camera.position.clone().add(view.clone().multiplyScalar(.55)),projectile=mesh(new T.BoxGeometry(.07,.07,.75),mat(0x80522e,.9),start);projectile.rotation.set(camera.rotation.x,camera.rotation.y,camera.rotation.z);thrownStick={mesh:projectile,start,end:target,elapsed:0};carryingStick=false;distractionTime=10;const button=document.querySelector('#meowButton');if(button)button.innerHTML='🐱<br>MEOW';bubble('The squirrel chatters loudly! The bodyguard is checking the noise!');try{const audio=new AudioContext(),osc=audio.createOscillator(),gain=audio.createGain();osc.type='sine';osc.frequency.setValueAtTime(1200,audio.currentTime);osc.frequency.exponentialRampToValueAtTime(650,audio.currentTime+.18);gain.gain.setValueAtTime(.07,audio.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.22);osc.connect(gain);gain.connect(audio.destination);osc.start();osc.stop(audio.currentTime+.23)}catch{}return true}
   function deliverLoot(){if(!save.loot.length)return false;const total=save.loot.reduce((sum,loot)=>sum+loot.value,0);save.money+=total;toast(`Your owner loves the loot! +$${total}`);save.loot=[];persist();hud();return true}
-  function interact(){if(!started||document.querySelector('#modal').classList.contains('open'))return;if(save.loot.length&&cat.position.distanceTo(owner.position)<2.4){deliverLoot();return}if(life?.interact())return;if(insideMansion){if(Math.abs(cat.position.x)<2.8&&cat.position.z<82.5){leaveMansion();return}scratch();return}if(currentHome){if(cat.position.z<54.3){leaveNeighbor();return}scratch();return}if(Math.abs(cat.position.x)<3&&Math.abs(cat.position.z-43)<3){if(onMothership){onMothership=false;cat.position.set(0,.12,43);bubble('Lift to the city. Press E here to return to the mothership.')}else{onMothership=true;cat.position.set(0,22.52,43);bubble('Welcome aboard! Defend the mothership with G or the LASER button.')}return}if(save.loot.length&&cat.position.distanceTo(owner.position)<2.4){deliverLoot();return}if(stickMesh&&cat.position.distanceTo(stickMesh.position)<1.8){pickupStick();return}for(const home of neighborHomes){if(Math.hypot(cat.position.x-home.x,cat.position.z-home.doorZ)<2.2){enterNeighbor(home);return}}if(mansion&&Math.hypot(cat.position.x-mansion.x,cat.position.z-mansion.doorZ)<3){enterMansion();return}scratch()}
+  function interact(){if(!started||document.querySelector('#modal').classList.contains('open'))return;if(attackNearbyRobot())return;if(save.loot.length&&cat.position.distanceTo(owner.position)<2.4){deliverLoot();return}if(life?.interact())return;if(insideMansion){if(Math.abs(cat.position.x)<2.8&&cat.position.z<82.5){leaveMansion();return}scratch();return}if(currentHome){if(cat.position.z<54.3){leaveNeighbor();return}scratch();return}if(Math.abs(cat.position.x)<3&&Math.abs(cat.position.z-43)<3){if(onMothership){onMothership=false;cat.position.set(0,.12,43);bubble('Lift to the city. Press E here to return to the mothership.')}else{onMothership=true;cat.position.set(0,22.52,43);bubble('Welcome aboard! Defend the mothership with G or the LASER button.')}return}if(save.loot.length&&cat.position.distanceTo(owner.position)<2.4){deliverLoot();return}if(stickMesh&&cat.position.distanceTo(stickMesh.position)<1.8){pickupStick();return}for(const home of neighborHomes){if(Math.hypot(cat.position.x-home.x,cat.position.z-home.doorZ)<2.2){enterNeighbor(home);return}}if(mansion&&Math.hypot(cat.position.x-mansion.x,cat.position.z-mansion.doorZ)<3){enterMansion();return}scratch()}
   function updateWorld(dt){
     laserClock=Math.max(0,laserClock-dt);
+    meleeClock=Math.max(0,meleeClock-dt);
     for(let i=laserBeams.length-1;i>=0;i--){const entry=laserBeams[i];entry.life-=dt;if(entry.life<=0){scene.remove(entry.beam);entry.beam.geometry.dispose();entry.beam.material.dispose();laserBeams.splice(i,1);}}
     for(const person of cityPeople){person.group.position.x+=person.dir*person.speed*dt;if(person.group.position.x>48||person.group.position.x< -48)person.dir*=-1;person.group.position.z=person.dir<0?39:47;person.group.rotation.y=person.dir>0?Math.PI/2:-Math.PI/2;}
     for(const car of cityTraffic){car.group.position.x+=car.speed*dt;if(car.group.position.x>55)car.group.position.x=-55;if(car.group.position.x< -55)car.group.position.x=55;car.group.rotation.y=car.speed>0?Math.PI/2:-Math.PI/2;}
     for(const craft of aircraft){craft.group.position.x+=craft.speed*dt;if(craft.group.position.x>craft.range/2)craft.group.position.x=-craft.range/2;if(craft.group.position.x< -craft.range/2)craft.group.position.x=craft.range/2;if(craft.rotor)craft.rotor.rotation.y+=dt*12;}
-    if(defenseAlerted){attackClock-=dt;if(attackClock<=0&&militaryUnits.length<3){spawnMilitary();attackClock=5.5;if(militaryUnits.length===1)toast('🚨 Military aircraft approaching! Aim with the mouse and press G or tap LASER!')}}
-    for(let i=militaryUnits.length-1;i>=0;i--){const unit=militaryUnits[i],target=new T.Vector3(0,23,43),delta=target.clone().sub(unit.group.position),distance=delta.length();if(distance>11)unit.group.position.add(delta.normalize().multiplyScalar(unit.speed*dt));else{unit.attack-=dt;if(unit.attack<=0){unit.attack=1.2;shipHull=Math.max(0,shipHull-12);addLaserBeam(unit.group.position.clone(),target,0xff435c);if(shipHull===0){shipHull=55;bubble('Mothership shields rebooted at 55%. Take out the attackers!');}else toast(`Mothership hit! Hull: ${Math.round(shipHull)}%`);}}}
+    if(defenseAlerted){attackClock-=dt;if(attackClock<=0&&militaryUnits.length<3){spawnMilitary();attackClock=5.5;if(militaryUnits.length===1)toast('🚨 Helicopters and tanks approaching! Hold G or tap LASER to defend!')}}
+    for(let i=militaryUnits.length-1;i>=0;i--){const unit=militaryUnits[i],target=new T.Vector3(0,unit.kind==='tank'?0:23,43),delta=target.clone().sub(unit.group.position),distance=delta.length();if(unit.rotor)unit.rotor.rotation.y+=dt*12;if(distance>11){unit.group.position.add(delta.normalize().multiplyScalar(unit.speed*dt));if(unit.kind==='tank')unit.group.rotation.y=Math.atan2(-delta.x,-delta.z);}else{unit.attack-=dt;if(unit.attack<=0){unit.attack=1.2;shipHull=Math.max(0,shipHull-12);addLaserBeam(unit.group.position.clone().add(new T.Vector3(0,unit.kind==='tank'?1.5:0,0)),new T.Vector3(0,21,43),0xff435c);if(shipHull===0){shipHull=55;bubble('Mothership shields rebooted at 55%. Take out the attackers!');}else toast(`Mothership hit! Hull: ${Math.round(shipHull)}%`);}}}
+    for(const ally of alienAllies){ally.cooldown-=dt;if(ally.cooldown<=0&&militaryUnits.length){const target=militaryUnits[0],start=ally.group.position.clone().add(new T.Vector3(0,1.15,0)),end=target.group.position.clone();addLaserBeam(start,end,0x68ff9c);target.hp--;ally.cooldown=1.8;if(target.hp<=0){motion.burst(target.group,0x68ff9c);target.group.parent?.remove(target.group);militaryUnits.splice(militaryUnits.indexOf(target),1);toast('👽 Your alien allies took out an attacker!')}}}
+    const inAlley=!onMothership&&cat.position.x>alleyCenterX-6&&cat.position.x<alleyCenterX+6&&cat.position.z<-13&&cat.position.z>-77;
+    if(inAlley&&!alleyEncounterActive)toast('🐈‍⬛ Alley cats, fight the robots! Use G to help!');
+    alleyEncounterActive=inAlley;
+    if(alleyEncounterActive){
+      for(const ally of alleyCats.filter(cat=>cat.alive)){
+        ally.attack-=dt;
+        const targets=alleyRobots.filter(robot=>robot.alive);
+        if(!targets.length)continue;
+        const robot=targets.reduce((closest,candidate)=>ally.group.position.distanceTo(candidate.group.position)<ally.group.position.distanceTo(closest.group.position)?candidate:closest,targets[0]);
+        const delta=robot.group.position.clone().sub(ally.group.position);delta.y=0;
+        if(delta.length()>2.2)ally.group.position.add(delta.normalize().multiplyScalar(dt*1.35));
+        if(ally.attack<=0&&ally.group.position.distanceTo(robot.group.position)<11){
+          ally.attack=2.2;addLaserBeam(ally.group.position.clone().add(new T.Vector3(0,.8,0)),robot.group.position.clone().add(new T.Vector3(0,1.7,0)),0x91ff9d);damageRobot(robot);
+        }
+      }
+      for(const robot of alleyRobots.filter(robot=>robot.alive)){
+        robot.attack-=dt;
+        const cats=alleyCats.filter(ally=>ally.alive),targets=cats.map(ally=>({group:ally.group,ally}));
+        targets.push({group:cat,player:true});
+        const target=targets.reduce((closest,candidate)=>robot.group.position.distanceTo(candidate.group.position)<robot.group.position.distanceTo(closest.group.position)?candidate:closest,targets[0]);
+        if(!target)continue;
+        const delta=target.group.position.clone().sub(robot.group.position);delta.y=0;
+        if(delta.length()>1.8)robot.group.position.add(delta.normalize().multiplyScalar(dt*.9));
+        if(delta.lengthSq()>0)robot.group.rotation.y=Math.atan2(-delta.x,-delta.z);
+        robot.gunFlash=Math.max(0,robot.gunFlash-dt);robot.gunMuzzle.visible=robot.gunFlash>0;
+        if(robot.attack<=0&&delta.length()<=12){
+          robot.attack=1.8;robot.gunFlash=.12;robot.gunMuzzle.visible=true;
+          const muzzle=robot.gunMuzzle.getWorldPosition(new T.Vector3()),impact=target.group.position.clone().add(new T.Vector3(0,.6,0));
+          addLaserBeam(muzzle,impact,0xff4058);
+          if(target.player){energy=Math.max(0,energy-8);toast('🤖 A robot attacked you! Help the alley cats fight back!')}
+          else{target.ally.hp--;if(target.ally.hp<=0){target.ally.alive=false;motion.burst(target.group,0xff9868);target.group.parent?.remove(target.group);toast('🐈 One of the alley cats needs help!')}}
+        }
+      }
+    }
   }
-  function update(dt){updateWorld(dt);const opening=introTime>0;if(opening)introTime=Math.max(0,introTime-dt);let forward=new T.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)), right=new T.Vector3(-forward.z,0,forward.x), move=new T.Vector3();if(!opening){if(keys.w)move.add(forward);if(keys.s)move.sub(forward);if(keys.a)move.sub(right);if(keys.d)move.add(right)}const sprint=!!keys.Shift&&energy>0&&move.lengthSq()>0;if(life&&!life.beforeMove(move.lengthSq()>0))move.set(0,0,0);if(move.lengthSq()){move.normalize().multiplyScalar((sprint?5.6:3.3)*dt);const next=cat.position.clone().add(move);cat.position.copy(next);cat.rotation.y=Math.atan2(-move.z,move.x);bob+=dt*(sprint?19:12)}if(onMothership&&(Math.abs(cat.position.x)>16.5||Math.abs(cat.position.z-43)>11.5))onMothership=false;if(sprint)energy=Math.max(0,energy-dt*24);else energy=Math.min(100,energy+dt*13);cat.position.y=life.stepVertical(dt,floorHeight(cat.position.x,cat.position.z));life.updateOwner(dt);if(distractionTime>0){distractionTime=Math.max(0,distractionTime-dt);const d=new T.Vector3(squirrel.position.x-guard.position.x,0,squirrel.position.z-guard.position.z);if(d.length()>.6)guard.position.add(d.normalize().multiplyScalar(dt*4.5));}else if(guard){const d=new T.Vector3(-guard.position.x,0,78-guard.position.z);if(d.length()>.3)guard.position.add(d.normalize().multiplyScalar(dt*3));}if(guard)guard.position.y=hillHeight(guard.position.x,guard.position.z);if(thrownStick){thrownStick.elapsed+=dt*1.65;const t=Math.min(1,thrownStick.elapsed);thrownStick.mesh.position.lerpVectors(thrownStick.start,thrownStick.end,t);thrownStick.mesh.position.y+=Math.sin(t*Math.PI)*3;if(t>=1){thrownStick.mesh.parent?.remove(thrownStick.mesh);thrownStick=null;}}if(squirrel)squirrel.rotation.y=Math.sin(performance.now()/260)*.08;const eye=new T.Vector3(cat.position.x,cat.position.y+(life.hidden?.25:life.sleeping?.35:.67)+Math.sin(bob)*.018,cat.position.z);const orbit=4.5,behind=new T.Vector3(cat.position.x+Math.sin(yaw)*orbit*Math.cos(pitch),cat.position.y+1.2-Math.sin(pitch)*orbit,cat.position.z+Math.cos(yaw)*orbit*Math.cos(pitch));const destination=viewMode==='first'?eye:behind;if(opening){const start=new T.Vector3(cat.position.x+Math.sin(yaw)*6,cat.position.y+5,cat.position.z+Math.cos(yaw)*6);const progress=1-introTime/2.2;const smooth=progress*progress*(3-2*progress);camera.position.lerpVectors(start,destination,smooth);camera.lookAt(cat.position.x,cat.position.y+.4,cat.position.z);cat.visible=true;paws.visible=false}else if(viewMode==='first'){camera.position.copy(eye);camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);cat.visible=false;paws.visible=true}else{camera.position.copy(behind);camera.lookAt(cat.position.x,cat.position.y+.4,cat.position.z);cat.visible=true;paws.visible=false}save.anger=Math.max(0,save.anger-dt*.04);hud();life.update(dt)}
+  function update(dt){updateWorld(dt);if(keys.g)fireLaser();const opening=introTime>0;if(opening)introTime=Math.max(0,introTime-dt);let forward=new T.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)), right=new T.Vector3(-forward.z,0,forward.x), move=new T.Vector3();if(!opening){if(keys.w)move.add(forward);if(keys.s)move.sub(forward);if(keys.a)move.sub(right);if(keys.d)move.add(right)}const sprint=!!keys.Shift&&energy>0&&move.lengthSq()>0;if(life&&!life.beforeMove(move.lengthSq()>0))move.set(0,0,0);if(move.lengthSq()){move.normalize().multiplyScalar((sprint?5.6:3.3)*dt);const next=cat.position.clone().add(move);cat.position.copy(next);cat.rotation.y=Math.atan2(-move.z,move.x);bob+=dt*(sprint?19:12)}if(onMothership&&(Math.abs(cat.position.x)>16.5||Math.abs(cat.position.z-43)>11.5))onMothership=false;if(sprint)energy=Math.max(0,energy-dt*24);else energy=Math.min(100,energy+dt*13);cat.position.y=life.stepVertical(dt,floorHeight(cat.position.x,cat.position.z));life.updateOwner(dt);if(distractionTime>0){distractionTime=Math.max(0,distractionTime-dt);const d=new T.Vector3(squirrel.position.x-guard.position.x,0,squirrel.position.z-guard.position.z);if(d.length()>.6)guard.position.add(d.normalize().multiplyScalar(dt*4.5));}else if(guard){const d=new T.Vector3(-guard.position.x,0,78-guard.position.z);if(d.length()>.3)guard.position.add(d.normalize().multiplyScalar(dt*3));}if(guard)guard.position.y=hillHeight(guard.position.x,guard.position.z);if(thrownStick){thrownStick.elapsed+=dt*1.65;const t=Math.min(1,thrownStick.elapsed);thrownStick.mesh.position.lerpVectors(thrownStick.start,thrownStick.end,t);thrownStick.mesh.position.y+=Math.sin(t*Math.PI)*3;if(t>=1){thrownStick.mesh.parent?.remove(thrownStick.mesh);thrownStick=null;}}if(squirrel)squirrel.rotation.y=Math.sin(performance.now()/260)*.08;const eye=new T.Vector3(cat.position.x,cat.position.y+(life.hidden?.25:life.sleeping?.35:.67)+Math.sin(bob)*.018,cat.position.z);const orbit=4.5,behind=new T.Vector3(cat.position.x+Math.sin(yaw)*orbit*Math.cos(pitch),cat.position.y+1.2-Math.sin(pitch)*orbit,cat.position.z+Math.cos(yaw)*orbit*Math.cos(pitch));const destination=viewMode==='first'?eye:behind;if(opening){const start=new T.Vector3(cat.position.x+Math.sin(yaw)*6,cat.position.y+5,cat.position.z+Math.cos(yaw)*6);const progress=1-introTime/2.2;const smooth=progress*progress*(3-2*progress);camera.position.lerpVectors(start,destination,smooth);camera.lookAt(cat.position.x,cat.position.y+.4,cat.position.z);cat.visible=true;paws.visible=false}else if(viewMode==='first'){camera.position.copy(eye);camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);cat.visible=false;paws.visible=true}else{camera.position.copy(behind);camera.lookAt(cat.position.x,cat.position.y+.4,cat.position.z);cat.visible=true;paws.visible=false}save.anger=Math.max(0,save.anger-dt*.04);hud();life.update(dt)}
   function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),.04);const active=started&&!document.querySelector('#modal').classList.contains('open');if(active)update(dt);else if(!camera.position.lengthSq()){camera.position.set(3,2.2,6);camera.lookAt(-3,.7,-3);}motion.update(active?dt:0);renderer.render(scene,camera)}loop();
-  let dragging=false,lastX=0,lastY=0,moved=false;renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;moved=false;lastX=e.clientX;lastY=e.clientY});addEventListener('pointermove',e=>{if(dragging){const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;yaw-=dx*.004;pitch=T.MathUtils.clamp(pitch-dy*.004,-.85,.75);lastX=e.clientX;lastY=e.clientY}});addEventListener('pointerup',e=>{if(dragging&&!moved&&started&&e.target===renderer.domElement)interact();dragging=false});addEventListener('keydown',e=>{const key=/^Key[WASD]$/.test(e.code)?e.code.slice(3).toLowerCase():e.key.toLowerCase();if(key===' ')e.preventDefault();keys[key]=true;if(e.key==='Shift')keys.Shift=true;if(!e.repeat){if(key==='v'&&started)toggleView();if(key==='e')interact();if(key==='f')meow();if(key==='g')fireLaser();if(key===' '&&started)life.jump()}});addEventListener('keyup',e=>{keys[/^Key[WASD]$/.test(e.code)?e.code.slice(3).toLowerCase():e.key.toLowerCase()]=false;if(e.key==='Shift')keys.Shift=false});document.querySelectorAll('.mobilepad button').forEach(button=>{const key=button.dataset.key;button.addEventListener('pointerdown',e=>{e.preventDefault();keys[key.toLowerCase()]=true;button.setPointerCapture(e.pointerId)});const release=()=>keys[key.toLowerCase()]=false;button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release)});
-  window.startGame=()=>{started=true;yaw=Math.PI;pitch=-.55;introTime=0;cat.visible=true;paws.visible=false;document.querySelector('#start').style.display='none';document.querySelector('#hud').style.display='block';hud();toast('📖 Пригоди — завдання та підказки · 🏠 Додому — нові іграшки й меблі');};window.act=interact;window.meow=meow;window.fireLaser=fireLaser;window.jump=()=>{if(started)life.jump()};window.toggleView=toggleView;window.togglePause=()=>{started=!started};window.openPanel=openPanel;window.closePanel=closePanel;window.travelHouse=travelHouse;window.setCatStyle=setCatStyle;window.setCollar=setCollar;window.renameCat=renameCat;window.finishAdoption=adopt;
+  function setKey(key,down){if(key==='Shift')keys.Shift=down;else keys[key.toLowerCase()]=down}
+  let dragging=false,lastX=0,lastY=0,moved=false;
+  renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;moved=false;lastX=e.clientX;lastY=e.clientY});
+  addEventListener('pointermove',e=>{if(dragging){const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;yaw-=dx*.004;pitch=T.MathUtils.clamp(pitch-dy*.004,-.85,.75);lastX=e.clientX;lastY=e.clientY}});
+  addEventListener('pointerup',e=>{if(dragging&&!moved&&started&&e.target===renderer.domElement)interact();dragging=false});
+  addEventListener('keydown',e=>{const key=e.key==='Shift'?'Shift':/^Key[WASD]$/.test(e.code)?e.code.slice(3).toLowerCase():e.key.toLowerCase();if(key===' ')e.preventDefault();setKey(key,true);if(!e.repeat){if(key==='v'&&started)toggleView();if(key==='e')interact();if(key==='f')toggleFlashlight();if(key===' '&&started)life.jump()}});
+  addEventListener('keyup',e=>{const key=e.key==='Shift'?'Shift':/^Key[WASD]$/.test(e.code)?e.code.slice(3).toLowerCase():e.key.toLowerCase();setKey(key,false)});
+  document.querySelectorAll('.mobilepad button').forEach(button=>{const key=button.dataset.key;button.addEventListener('pointerdown',e=>{e.preventDefault();setKey(key,true);button.setPointerCapture(e.pointerId)});const release=()=>setKey(key,false);button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release)});
+  window.startGame=()=>{started=true;yaw=Math.PI;pitch=-.55;introTime=0;cat.visible=true;paws.visible=false;document.querySelector('#start').style.display='none';document.querySelector('#hud').style.display='block';hud();toast('📖 Explore the dark alley and help the cats! Press F for your flashlight.');};window.act=interact;window.meow=meow;window.fireLaser=fireLaser;window.jump=()=>{if(started)life.jump()};window.toggleView=toggleView;window.toggleFlashlight=toggleFlashlight;window.togglePause=()=>{started=!started};window.openPanel=openPanel;window.closePanel=closePanel;window.travelHouse=travelHouse;window.setCatStyle=setCatStyle;window.setCollar=setCollar;window.renameCat=renameCat;window.finishAdoption=adopt;
 })();

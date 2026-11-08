@@ -1,5 +1,5 @@
 window.WorldMotion = class WorldMotion {
-  constructor(T, scene) { this.T=T; this.scene=scene; this.entries=[]; this.effects=[]; this.time=0; this.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  constructor(T, scene) { this.T=T; this.scene=scene; this.entries=[]; this.effects=[]; this.collapses=[]; this.time=0; this.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches; }
   add(object,kind,options={}) {
     const entry={object,kind,options,position:object.position.clone(),rotation:object.rotation.clone(),scale:object.scale.clone(),previous:object.position.clone(),phase:this.entries.length*2.399,hit:0};
     this.entries.push(entry); return object;
@@ -11,6 +11,10 @@ window.WorldMotion = class WorldMotion {
     const pieces=[];
     for(let i=0;i<12;i++){const mesh=new T.Mesh(geometry,material);mesh.position.copy(origin);this.scene.add(mesh);pieces.push({mesh,velocity:new T.Vector3(Math.sin(i*2.4)*1.7,1.4+(i%4)*.4,Math.cos(i*2.4)*1.7)});}
     this.effects.push({pieces,geometry,material,life:1});
+  }
+  collapse(object) {
+    const T=this.T,bounds=new T.Box3().setFromObject(object),height=bounds.getSize(new T.Vector3()).y;
+    this.collapses.push({object,position:object.position.clone(),rotation:object.rotation.clone(),scale:object.scale.clone(),drop:Math.max(1,height*.38),life:1.1});
   }
   update(dt) {
     this.time+=dt;const t=this.time;
@@ -39,5 +43,6 @@ window.WorldMotion = class WorldMotion {
       return true;
     });
     this.effects=this.effects.filter(e=>{e.life-=dt;e.material.opacity=Math.max(0,e.life);for(const p of e.pieces){p.velocity.y-=dt*4;p.mesh.position.addScaledVector(p.velocity,dt);p.mesh.rotation.x+=dt*5;p.mesh.rotation.z+=dt*3;}if(e.life>0)return true;for(const p of e.pieces)this.scene.remove(p.mesh);e.geometry.dispose();e.material.dispose();return false;});
+    this.collapses=this.collapses.filter(e=>{const progress=Math.min(1,1-e.life/1.1),ease=progress*progress*(3-2*progress);e.life-=dt;e.object.position.y=e.position.y-e.drop*ease;e.object.rotation.x=e.rotation.x+ease*.08;e.object.rotation.z=e.rotation.z+Math.sin(progress*Math.PI)*.035;e.object.scale.y=e.scale.y*(1-.88*ease);if(e.life>0)return true;e.object.parent?.remove(e.object);return false;});
   }
 };
